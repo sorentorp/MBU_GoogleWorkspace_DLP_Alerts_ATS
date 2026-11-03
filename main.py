@@ -22,11 +22,12 @@ def run_pull():
     ats = AutomationServer.from_environment()
     workqueue = ats.workqueue()
     
-    # Opret forbindelse til RPA database for at hente konstanter/indstillinger
+    # Opret forbindelse til RPA database for at hente konstanter
     rpa_conn = RPAConnection(db_env="PROD", commit=False)
     with rpa_conn:
         app_email = rpa_conn.get_constant("google_dlp_app_email").get("value", "")
-        admin_email = rpa_conn.get_constant("google_dlp_admin_email").get("value", "soer8596@aaks.dk")
+        # Henter admin-mail dynamisk fra databasen (uden hardcodet fallback i koden)
+        admin_email = rpa_conn.get_constant("google_dlp_admin_email").get("value", "")
 
     # Hent Google Service Account fra ATS Credentials
     google_cred = Credential.get_credential("google_workspace_dlp_service_account")
@@ -64,7 +65,7 @@ def run_pull():
 
 
 def run_notify():
-    """Performer: Tømmer ATS-køen, tjekker 24t cooldown og sender adviseringer via smtp_util."""
+    """Performer: Tømmer ATS-køen, tjekker cooldown og sender adviseringer via smtp_util."""
     logger.info("Starter Notify-process (Performer)...")
     
     ats = AutomationServer.from_environment()
@@ -72,16 +73,20 @@ def run_notify():
     
     rpa_conn = RPAConnection(db_env="PROD", commit=False)
     with rpa_conn:
-        admin_email = rpa_conn.get_constant("google_dlp_admin_email").get("value", "soer8596@aaks.dk")
+        admin_email = rpa_conn.get_constant("google_dlp_admin_email").get("value", "")
         email_sender = rpa_conn.get_constant("e-mail_noreply").get("value", "")
         smtp_port = rpa_conn.get_constant("smtp_port").get("value", 25)
         smtp_adm_server = rpa_conn.get_constant("smtp_adm_server").get("value", "")
+        
+        # Henter cooldown-timer dynamisk fra databasen (med standardværdi 24 hvis ikke oprettet endnu)
+        cooldown_val = rpa_conn.get_constant("dlp_cooldown_hours")
+        cooldown_hours = int(cooldown_val.get("value", 24)) if cooldown_val else 24
 
     google_cred = Credential.get_credential("google_workspace_dlp_service_account")
     dlp_helper = DlpWorkspaceHelper(
         service_account_json=google_cred.password,
         admin_email=admin_email,
-        cooldown_hours=24
+        cooldown_hours=cooldown_hours
     )
 
     body_template = """
@@ -107,9 +112,8 @@ def run_notify():
             if not target_user:
                 raise WorkItemError(f"Ingen modtager fundet for dokument {doc_id} ({doc_title})")
                 
-            # Tjek 24-timers karensperiode via filens skjulte appProperties i Google Drive
+            # Tjek karensperiode baseret på værdien hentet fra databasen
             if dlp_helper.is_in_cooldown_or_stamp(data):
-                # Dokumentet er allerede varslet inden for 24 timer -> markeres som 'completed' uden spam.
                 continue
                 
             # Byg link og send mail
