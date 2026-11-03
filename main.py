@@ -2,7 +2,7 @@ import logging
 import sys
 from automation_server_client import AutomationServer, Credential, WorkItemError
 from dlp_helper import DlpWorkspaceHelper
-from helpers.get_and_store_alerts import get_alerts_past_week, update_db_with_alerts
+from helpers.get_and_store_alerts import get_alerts_past_week
 from helpers import smtp_util
 from mbu_dev_shared_components.database.connection import RPAConnection
 
@@ -22,7 +22,7 @@ def run_pull():
     ats = AutomationServer.from_environment()
     workqueue = ats.workqueue()
     
-    # Opret forbindelse til RPA database for at hente konstanter/indstillinger hvis nødvendigt
+    # Opret forbindelse til RPA database for at hente konstanter/indstillinger
     rpa_conn = RPAConnection(db_env="PROD", commit=False)
     with rpa_conn:
         app_email = rpa_conn.get_constant("google_dlp_app_email").get("value", "")
@@ -35,15 +35,15 @@ def run_pull():
         admin_email=admin_email
     )
 
-    # Hent alarmer fra past week (bruger jeres eksisterende funktion)
+    # Hent alarmer fra past week
     past_week_alerts = get_alerts_past_week(app_email=app_email, admin_email=admin_email)
     logger.info(f"Hentet {len(past_week_alerts)} alarmer fra Google Alert API.")
 
-    # Gennemgå alarmer, find den reelle bruger (med hensyntagen til Shared Drive forsinkelse)
+    # Gennemgå alarmer og find den reelle bruger (med hensyntagen til Shared Drive forsinkelse)
     for raw_alert in past_week_alerts:
         alert_id = raw_alert.get("alertId")
         
-        # Filtrer kun CPR-relaterede alarmer (ligesom I plejer i queue_handler)
+        # Filtrer kun CPR-relaterede alarmer
         alert_data = raw_alert.get("data", {})
         if "ruleViolationInfo" not in alert_data:
             continue
@@ -51,7 +51,7 @@ def run_pull():
         if "cpr" not in trigger_type.lower():
             continue
 
-        # Brug dlp_helper til at løse den rigtige bruger og tjekke om den skal udskydes pga. log-forsinkelse
+        # Brug dlp_helper til at finde den rigtige bruger og tjekke log-forsinkelse
         item_payload = dlp_helper.resolve_alert_for_queue(raw_alert)
         
         if item_payload is None:
@@ -112,9 +112,8 @@ def run_notify():
                 # Dokumentet er allerede varslet inden for 24 timer -> markeres som 'completed' uden spam.
                 continue
                 
-            # Byg link og send mail vha. jester eksisterende smtp_util
+            # Byg link og send mail
             link_to_file = f"https://drive.google.com/file/d/{doc_id}/view"
-            # Hent evt. navn ud fra mailen (eller brug selve mailen som navn hvis ikke oplyst)
             to_name = target_user.split("@")[0].replace(".", " ").title()
             
             body = body_template.format(to_name=to_name, link_to_file=link_to_file)
