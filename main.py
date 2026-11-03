@@ -3,7 +3,6 @@ import sys
 from automation_server_client import AutomationServer, Credential, WorkItemError
 from dlp_helper import DlpWorkspaceHelper
 from helpers.get_and_store_alerts import get_alerts_past_week, update_db_with_alerts
-from helpers.ats_functions import get_item_info
 from helpers import smtp_util
 from mbu_dev_shared_components.database.connection import RPAConnection
 
